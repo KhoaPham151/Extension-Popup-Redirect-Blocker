@@ -1,69 +1,138 @@
 /**
  * CONTENT SCRIPT - Block Popups and Redirects
+ * Version 2.0 - Realistic approach
  */
 
 (function() {
   'use strict';
 
   let isEnabled = true;
+  let blockedCount = 0;
+  let lastUserInteraction = 0;
+  
+  // Track real user interactions
+  const USER_INTERACTION_TIMEOUT = 1000; // 1 second window after user click
   
   // Whitelist for trusted domains (never block)
   const TRUSTED_DOMAINS = [
     'google.com',
     'youtube.com',
     'gmail.com',
-    'drive.google.com',
-    'docs.google.com',
     'facebook.com',
     'twitter.com',
     'linkedin.com',
     'github.com',
     'microsoft.com',
+    'apple.com',
+    'amazon.com',
+    'netflix.com',
+    'spotify.com',
+    'reddit.com',
+    'wikipedia.org',
     'openai.com',
     'anthropic.com',
-    'cloudflare.com'
+    'cloudflare.com',
+    'stackoverflow.com',
+    'medium.com',
+    'notion.so'
   ];
   
-  const SUSPICIOUS_KEYWORDS = [
-    'popunder',
-    'clickunder',
-    '/adserver',
+  // Known ad/popup domains and patterns
+  const BLOCKED_DOMAINS = [
+    'popads.net',
+    'popcash.net',
+    'propellerads.com',
+    'exoclick.com',
     'adnxs.com',
     'taboola.com',
     'outbrain.com',
-    'ad-delivery',
-    'popads',
-    'popcash'
+    'mgid.com',
+    'revcontent.com',
+    'content.ad',
+    'adsterra.com',
+    'hilltopads.net',
+    'trafficjunky.com',
+    'juicyads.com',
+    'clickadu.com',
+    'ad-maven.com',
+    'admaven.com',
+    'pushame.com',
+    'pushnami.com',
+    'richpush.co',
+    'onclickmax.com',
+    'poperblocker.com',
+    'adf.ly',
+    'linkbucks.com',
+    'shorte.st'
   ];
 
-  let blockedCount = 0;
+  const SUSPICIOUS_URL_PATTERNS = [
+    /popunder/i,
+    /clickunder/i,
+    /\/adserv/i,
+    /\/ads\//i,
+    /\/popup\//i,
+    /exit[-_]?intent/i,
+    /interstitial/i,
+    /\/click\?.*track/i
+  ];
 
-  function isTrustedDomain(url) {
-    if (!url) return false;
+  // ============ UTILITY FUNCTIONS ============
+
+  function getDomain(url) {
     try {
-      const urlObj = new URL(url);
-      const hostname = urlObj.hostname.toLowerCase();
-      return TRUSTED_DOMAINS.some(domain => 
-        hostname === domain || hostname.endsWith('.' + domain)
-      );
+      return new URL(url).hostname.toLowerCase();
     } catch (e) {
-      return false;
+      return '';
     }
   }
 
-  function isSuspiciousUrl(url) {
+  function isTrustedDomain(url) {
+    if (!url) return false;
+    const hostname = getDomain(url);
+    if (!hostname) return false;
+    
+    return TRUSTED_DOMAINS.some(domain => 
+      hostname === domain || hostname.endsWith('.' + domain)
+    );
+  }
+
+  function isBlockedDomain(url) {
+    if (!url) return false;
+    const hostname = getDomain(url);
+    if (!hostname) return false;
+    
+    return BLOCKED_DOMAINS.some(domain => 
+      hostname === domain || hostname.endsWith('.' + domain)
+    );
+  }
+
+  function hasSuspiciousPattern(url) {
+    if (!url) return false;
+    return SUSPICIOUS_URL_PATTERNS.some(pattern => pattern.test(url));
+  }
+
+  function shouldBlockUrl(url) {
     if (!url) return false;
     
     // Never block trusted domains
     if (isTrustedDomain(url)) return false;
     
-    const lowerUrl = url.toLowerCase();
-    return SUSPICIOUS_KEYWORDS.some(keyword => lowerUrl.includes(keyword));
+    // Always block known ad domains
+    if (isBlockedDomain(url)) return true;
+    
+    // Block suspicious patterns
+    if (hasSuspiciousPattern(url)) return true;
+    
+    return false;
+  }
+
+  function isRecentUserInteraction() {
+    return (Date.now() - lastUserInteraction) < USER_INTERACTION_TIMEOUT;
   }
 
   function logBlocked(type, detail) {
     blockedCount++;
-    
     try {
       chrome.runtime.sendMessage({
         action: 'updateBadge',
@@ -74,36 +143,57 @@
     } catch (e) {}
   }
 
-  function isTrustedUserAction(event) {
-    if (!event || !event.isTrusted) return false;
-    const now = Date.now();
-    if (window._lastClickTime && (now - window._lastClickTime) < 100) return false;
-    window._lastClickTime = now;
-    return true;
-  }
+  // ============ TRACK USER INTERACTIONS ============
+  
+  // Record genuine user interactions
+  ['click', 'mousedown', 'touchstart', 'keydown'].forEach(eventType => {
+    document.addEventListener(eventType, function(e) {
+      if (e.isTrusted) {
+        lastUserInteraction = Date.now();
+      }
+    }, true);
+  });
 
-  // Override window.open
+  // ============ OVERRIDE WINDOW.OPEN ============
+
   const originalWindowOpen = window.open;
 
   window.open = function(url, target, features) {
-    if (!isEnabled) return originalWindowOpen.call(window, url, target, features);
-
-    if (isSuspiciousUrl(url)) {
-      logBlocked('window.open', url || 'about:blank');
-      return null;
+    if (!isEnabled) {
+      return originalWindowOpen.call(window, url, target, features);
     }
 
+    // Allow if user just interacted (clicked a button, link, etc.)
+    if (isRecentUserInteraction()) {
+      // But still block known ad domains
+      if (url && isBlockedDomain(url)) {
+        logBlocked('window.open (ad domain)', url);
+        return null;
+      }
+      return originalWindowOpen.call(window, url, target, features);
+    }
+
+    // Block popups without user interaction
     if (!url || url === 'about:blank') {
-      logBlocked('window.open (blank)', 'about:blank or empty URL');
+      // Only block about:blank if no recent user interaction
+      logBlocked('window.open (no user action)', url || 'about:blank');
       return null;
     }
 
-    return originalWindowOpen.call(window, url, target, features);
+    if (shouldBlockUrl(url)) {
+      logBlocked('window.open (suspicious)', url);
+      return null;
+    }
+
+    // Block popups that weren't triggered by user
+    logBlocked('window.open (auto popup)', url);
+    return null;
   };
 
-  // Block unauthorized target="_blank"
-  function handleClickEvent(event) {
-    if (!isEnabled) return;
+  // ============ BLOCK SUSPICIOUS LINKS ============
+
+  document.addEventListener('click', function(event) {
+    if (!isEnabled || !event.isTrusted) return;
 
     let target = event.target;
     while (target && target.tagName !== 'A') {
@@ -113,70 +203,63 @@
     if (!target || target.tagName !== 'A') return;
 
     const href = target.href;
-    const linkTarget = target.target;
 
-    if (linkTarget === '_blank' && isSuspiciousUrl(href)) {
+    // Block links to known ad domains
+    if (isBlockedDomain(href)) {
       event.preventDefault();
       event.stopPropagation();
-      event.stopImmediatePropagation();
-      logBlocked('link target="_blank"', href);
+      logBlocked('link (ad domain)', href);
       return false;
     }
 
-    if (target.hasAttribute('onclick') && isSuspiciousUrl(href)) {
+    // Block suspicious redirect links
+    if (hasSuspiciousPattern(href) && !isTrustedDomain(href)) {
       event.preventDefault();
       event.stopPropagation();
-      logBlocked('suspicious onclick', href);
+      logBlocked('link (suspicious pattern)', href);
       return false;
     }
-  }
+  }, true);
 
-  document.addEventListener('click', handleClickEvent, true);
+  // ============ BLOCK SUSPICIOUS SCRIPTS/IFRAMES ============
 
-  // Disable hidden ad scripts
-  const scriptObserver = new MutationObserver(function(mutations) {
+  const observer = new MutationObserver(function(mutations) {
     if (!isEnabled) return;
 
     mutations.forEach(function(mutation) {
       mutation.addedNodes.forEach(function(node) {
-        if (node.nodeName === 'SCRIPT') {
-          const src = node.src || '';
-          const content = node.textContent || '';
-
-          if (isSuspiciousUrl(src)) {
+        // Block ad scripts
+        if (node.nodeName === 'SCRIPT' && node.src) {
+          if (isBlockedDomain(node.src) || hasSuspiciousPattern(node.src)) {
             node.remove();
-            logBlocked('ad script', src);
-            return;
-          }
-
-          const suspiciousPatterns = [
-            /window\.open\s*\(/i,
-            /\.popup\s*\(/i,
-            /popunder/i,
-            /clickunder/i,
-            /document\.write.*<script/i
-          ];
-
-          if (suspiciousPatterns.some(pattern => pattern.test(content))) {
-            node.remove();
-            logBlocked('suspicious inline script', 'Contains popup code');
+            logBlocked('script (ad)', node.src);
             return;
           }
         }
 
+        // Block ad iframes
         if (node.nodeName === 'IFRAME') {
           const src = node.src || '';
-          const style = window.getComputedStyle ? window.getComputedStyle(node) : node.style;
           
+          // Block known ad iframes
+          if (isBlockedDomain(src) || hasSuspiciousPattern(src)) {
+            node.remove();
+            logBlocked('iframe (ad)', src || 'no src');
+            return;
+          }
+          
+          // Block hidden iframes (commonly used for tracking/ads)
+          const style = node.style;
           const isHidden = (
-            node.width === '0' || node.height === '0' ||
+            node.width == '0' || node.height == '0' ||
             style.width === '0px' || style.height === '0px' ||
-            style.display === 'none' || style.visibility === 'hidden'
+            style.display === 'none' || style.visibility === 'hidden' ||
+            (node.offsetWidth === 0 && node.offsetHeight === 0)
           );
 
-          if (isHidden || isSuspiciousUrl(src)) {
+          if (isHidden && src) {
             node.remove();
-            logBlocked('hidden/ad iframe', src || 'Hidden iframe');
+            logBlocked('iframe (hidden)', src);
             return;
           }
         }
@@ -185,15 +268,16 @@
   });
 
   if (document.documentElement) {
-    scriptObserver.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  // Block redirect techniques
+  // ============ BLOCK HISTORY MANIPULATION ============
+
   const originalPushState = history.pushState;
   const originalReplaceState = history.replaceState;
 
   history.pushState = function(state, title, url) {
-    if (isEnabled && isSuspiciousUrl(url)) {
+    if (isEnabled && url && shouldBlockUrl(url.toString())) {
       logBlocked('history.pushState', url);
       return;
     }
@@ -201,57 +285,46 @@
   };
 
   history.replaceState = function(state, title, url) {
-    if (isEnabled && isSuspiciousUrl(url)) {
+    if (isEnabled && url && shouldBlockUrl(url.toString())) {
       logBlocked('history.replaceState', url);
       return;
     }
     return originalReplaceState.apply(this, arguments);
   };
 
-  // Block timer-based popups
-  const originalSetTimeout = window.setTimeout;
-  const originalSetInterval = window.setInterval;
+  // ============ BLOCK AUTO-REDIRECT ============
 
-  window.setTimeout = function(callback, delay, ...args) {
-    if (isEnabled && typeof callback === 'string') {
-      if (/window\.open|\.popup|location\s*=/i.test(callback)) {
-        logBlocked('setTimeout with popup code', callback.substring(0, 100));
-        return 0;
+  // Block meta refresh redirects to ad pages
+  const checkMetaRefresh = () => {
+    const metaTags = document.querySelectorAll('meta[http-equiv="refresh"]');
+    metaTags.forEach(meta => {
+      const content = meta.getAttribute('content') || '';
+      const urlMatch = content.match(/url\s*=\s*['"]?([^'";\s]+)/i);
+      if (urlMatch && urlMatch[1]) {
+        if (shouldBlockUrl(urlMatch[1])) {
+          meta.remove();
+          logBlocked('meta refresh', urlMatch[1]);
+        }
       }
-    }
-    return originalSetTimeout.call(window, callback, delay, ...args);
+    });
   };
 
-  window.setInterval = function(callback, delay, ...args) {
-    if (isEnabled && typeof callback === 'string') {
-      if (/window\.open|\.popup|location\s*=/i.test(callback)) {
-        logBlocked('setInterval with popup code', callback.substring(0, 100));
-        return 0;
-      }
-    }
-    return originalSetInterval.call(window, callback, delay, ...args);
-  };
+  // Run after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkMetaRefresh);
+  } else {
+    checkMetaRefresh();
+  }
 
-  // Block beforeunload popups
-  window.addEventListener('beforeunload', function(event) {
-    if (!isEnabled) return;
-    
-    const handlers = window.onbeforeunload;
-    if (handlers && typeof handlers === 'function') {
-      const handlerStr = handlers.toString();
-      if (/window\.open|popup/i.test(handlerStr)) {
-        window.onbeforeunload = null;
-        logBlocked('beforeunload handler', 'Contains popup code');
-      }
-    }
-  }, true);
+  // ============ SYNC WITH STORAGE ============
 
-  // Listen for state from storage
   chrome.storage.local.get(['isEnabled'], function(result) {
-    if (result.hasOwnProperty('isEnabled')) isEnabled = result.isEnabled;
+    if (result.hasOwnProperty('isEnabled')) {
+      isEnabled = result.isEnabled;
+    }
   });
 
-  chrome.storage.onChanged.addListener(function(changes, namespace) {
+  chrome.storage.onChanged.addListener(function(changes) {
     if (changes.isEnabled) {
       isEnabled = changes.isEnabled.newValue;
     }
