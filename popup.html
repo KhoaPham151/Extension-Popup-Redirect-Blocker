@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Popup & Redirect Blocker</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 340px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #ffffff;
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+      padding: 20px;
+      text-align: center;
+    }
+
+    .header.disabled {
+      background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+    }
+
+    .header-icon { font-size: 40px; margin-bottom: 8px; }
+    .header h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .header p { font-size: 12px; opacity: 0.9; }
+
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 15px 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .toggle-label { font-size: 14px; font-weight: 500; }
+    .toggle-status { font-size: 12px; color: #27ae60; margin-top: 4px; }
+    .toggle-status.disabled { color: #e74c3c; }
+
+    .toggle-switch {
+      position: relative;
+      width: 50px;
+      height: 26px;
+    }
+
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #4a4a5a;
+      transition: 0.3s;
+      border-radius: 26px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    input:checked + .slider {
+      background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(24px);
+    }
+
+    .settings-section {
+      padding: 15px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .settings-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #888;
+      margin-bottom: 12px;
+    }
+
+    .setting-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+    }
+
+    .setting-info { flex: 1; }
+    .setting-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+    .setting-desc { font-size: 11px; color: #888; }
+
+    .toggle-switch-small {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+
+    .toggle-switch-small input { opacity: 0; width: 0; height: 0; }
+
+    .toggle-switch-small .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #4a4a5a;
+      transition: 0.3s;
+      border-radius: 22px;
+    }
+
+    .toggle-switch-small .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+
+    .toggle-switch-small input:checked + .slider {
+      background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    }
+
+    .toggle-switch-small input:checked + .slider:before {
+      transform: translateX(18px);
+    }
+
+    .stats-section { padding: 15px 20px; }
+
+    .stats-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #888;
+      margin-bottom: 12px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 15px;
+      text-align: center;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .stat-icon { font-size: 22px; margin-bottom: 6px; }
+    .stat-value { font-size: 22px; font-weight: 700; color: #3498db; margin-bottom: 4px; }
+    .stat-label { font-size: 10px; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .features-section { padding: 0 20px 15px; }
+
+    .features-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .feature-icon { margin-right: 10px; font-size: 14px; }
+    .feature-item.active .feature-icon { color: #27ae60; }
+    .feature-item.inactive .feature-icon { color: #7f8c8d; }
+
+    .button-section { padding: 0 20px 15px; }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-reset {
+      background: rgba(231, 76, 60, 0.2);
+      color: #e74c3c;
+      border: 1px solid rgba(231, 76, 60, 0.3);
+    }
+
+    .btn-reset:hover { background: rgba(231, 76, 60, 0.3); }
+
+    .footer {
+      padding: 12px 20px;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.2);
+      font-size: 10px;
+      color: #666;
+    }
+
+    .footer a { color: #3498db; text-decoration: none; }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
+    .pulse { animation: pulse 0.3s ease-in-out; }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #27ae60;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 12px;
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="header" id="header">
+    <div class="header-icon">🛡️</div>
+    <h1>Popup & Redirect Blocker</h1>
+    <p>Protect your browsing experience</p>
+  </div>
+
+  <div class="toggle-container">
+    <div>
+      <div class="toggle-label">Protection Status</div>
+      <div class="toggle-status" id="statusText">Enabled</div>
+    </div>
+    <label class="toggle-switch">
+      <input type="checkbox" id="toggleSwitch" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title">⚙️ Settings</div>
+    
+    <div class="setting-item">
+      <div class="setting-info">
+        <div class="setting-name">🔔 Prompt Notifications</div>
+        <div class="setting-desc">Ask before allowing redirects</div>
+      </div>
+      <label class="toggle-switch-small">
+        <input type="checkbox" id="notificationToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    
+    <div class="setting-item">
+      <div class="setting-info">
+        <div class="setting-name">🔕 Silent Mode</div>
+        <div class="setting-desc">Block without notifications</div>
+      </div>
+      <label class="toggle-switch-small">
+        <input type="checkbox" id="silentModeToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="stats-section">
+    <div class="stats-title">📊 Blocking Statistics</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">📅</div>
+        <div class="stat-value" id="blockedToday">0</div>
+        <div class="stat-label">Today</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📈</div>
+        <div class="stat-value" id="totalBlocked">0</div>
+        <div class="stat-label">Total</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="features-section">
+    <div class="features-title">⚡ Active Features</div>
+    <div class="feature-item active" id="feature1">
+      <span class="feature-icon">✓</span>
+      <span>Block unauthorized window.open()</span>
+    </div>
+    <div class="feature-item active" id="feature2">
+      <span class="feature-icon">✓</span>
+      <span>Block suspicious target="_blank" links</span>
+    </div>
+    <div class="feature-item active" id="feature3">
+      <span class="feature-icon">✓</span>
+      <span>Block ad scripts & hidden iframes</span>
+    </div>
+    <div class="feature-item active" id="feature4">
+      <span class="feature-icon">✓</span>
+      <span>Block redirects to ads/pop domains</span>
+    </div>
+  </div>
+
+  <div class="button-section">
+    <button class="btn btn-reset" id="resetBtn">
+      <span>🔄</span>
+      <span>Reset Statistics</span>
+    </button>
+  </div>
+
+  <div class="footer">
+    Version 1.1.0 | Made by <a href="#">KhoaPham(Danny)</a>
+  </div>
+
+  <div class="toast" id="toast">Operation successful!</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
