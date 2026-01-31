@@ -7,16 +7,56 @@
 
   let isEnabled = true;
   
+  // Whitelist for trusted domains (never block)
+  const TRUSTED_DOMAINS = [
+    'google.com',
+    'youtube.com',
+    'gmail.com',
+    'drive.google.com',
+    'docs.google.com',
+    'facebook.com',
+    'twitter.com',
+    'linkedin.com',
+    'github.com',
+    'microsoft.com',
+    'openai.com',
+    'anthropic.com',
+    'cloudflare.com'
+  ];
+  
   const SUSPICIOUS_KEYWORDS = [
-    'ads', 'pop', 'click', 'track', 'banner', 'promo',
-    'adserver', 'doubleclick', 'googlesyndication', 'adnxs',
-    'taboola', 'outbrain', 'popunder', 'clickunder'
+    'popunder',
+    'clickunder',
+    '/adserver',
+    'adnxs.com',
+    'taboola.com',
+    'outbrain.com',
+    'ad-delivery',
+    'popads',
+    'popcash'
   ];
 
   let blockedCount = 0;
 
+  function isTrustedDomain(url) {
+    if (!url) return false;
+    try {
+      const urlObj = new URL(url);
+      const hostname = urlObj.hostname.toLowerCase();
+      return TRUSTED_DOMAINS.some(domain => 
+        hostname === domain || hostname.endsWith('.' + domain)
+      );
+    } catch (e) {
+      return false;
+    }
+  }
+
   function isSuspiciousUrl(url) {
     if (!url) return false;
+    
+    // Never block trusted domains
+    if (isTrustedDomain(url)) return false;
+    
     const lowerUrl = url.toLowerCase();
     return SUSPICIOUS_KEYWORDS.some(keyword => lowerUrl.includes(keyword));
   }
